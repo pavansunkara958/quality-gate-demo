@@ -1,5 +1,27 @@
 [
  {
+  "id": "45558605590-4ec468d",
+  "sha": "4ec468dbd6adbf06831db2a3add3deb71ae80560",
+  "short_sha": "4ec468d",
+  "actor": "pavansunkara958",
+  "branch": "main",
+  "event": "push",
+  "pr": "",
+  "timestamp": "2026-11-25T06:10:13+00:00",
+  "gate": "PASSED",
+  "counts": {
+   "secret": 0,
+   "vulnerability": 0,
+   "bug": 0,
+   "CRITICAL": 0,
+   "HIGH": 0,
+   "MEDIUM": 0,
+   "LOW": 0
+  },
+  "total": 0,
+  "run_url": "https://github.com/pavansunkara958/quality-gate-demo/actions/runs/45558605590"
+ },
+ {
   "id": "45558517616-7b7760c",
   "sha": "7b7760cd1cf655db145342b89be181cb8c20509e",
   "short_sha": "7b7760c",
