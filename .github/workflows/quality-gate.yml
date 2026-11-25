@@ -1,0 +1,90 @@
+name: Security Quality Gate
+
+# Change "main" in both places to the branch you are assigned.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # push reports to gh-pages, comment on commits
+  pull-requests: write   # comment on pull requests
+
+jobs:
+  quality-gate:
+    name: quality-gate   # this exact name is the required status check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the pushed code (full history for diffing)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run scanner
+        id: scan
+        env:
+          SHADE_API_URL: ${{ secrets.SHADE_API_URL }}
+          SHADE_API_KEY: ${{ secrets.SHADE_API_KEY }}
+          SHADE_MODEL: ${{ vars.SHADE_MODEL || 'z-ai/glm-flash-latest' }}
+          BUG_BLOCK_SEVERITIES: ${{ vars.BUG_BLOCK_SEVERITIES || 'CRITICAL' }}
+          LLM_FAIL_MODE: ${{ vars.LLM_FAIL_MODE || 'closed' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.base_ref || github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTOR: ${{ github.actor }}
+          DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: python scanner/scan.py --out out
+
+      - name: Post feedback on the PR or commit
+        if: always() && hashFiles('out/summary.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          cat out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file out/summary.md
+          else
+            gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" -F body=@out/summary.md
+          fi
+
+      - name: Checkout dashboard branch
+        if: always() && hashFiles('out/report.json') != ''
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+
+      - name: Publish report to dashboard
+        if: always() && hashFiles('out/report.json') != ''
+        working-directory: site
+        run: |
+          git config user.name "quality-gate-bot"
+          git config user.email "quality-gate-bot@users.noreply.github.com"
+          for i in 1 2 3 4 5; do
+            git fetch origin gh-pages && git reset --hard origin/gh-pages
+            python ../scanner/publish.py ../out/report.json . ../dashboard
+            git add -A && git commit -m "report: $GITHUB_SHA"
+            git push origin HEAD:gh-pages && exit 0
+            sleep $((i * 3))
+          done
+          exit 1
+
+      - name: Enforce gate
+        if: always()
+        env:
+          GATE: ${{ steps.scan.outputs.gate }}
+        run: |
+          if [ "$GATE" != "PASSED" ]; then
+            echo "::error::Quality gate REJECTED - see the job summary and dashboard"
+            exit 1
+          fi
