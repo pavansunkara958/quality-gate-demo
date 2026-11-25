@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quality Gate Dashboard</title>
+<style>
+  :root { --bg:#0f1419; --card:#1a2129; --line:#2b3540; --fg:#e6edf3; --mut:#8b98a5; --ok:#2ea043; --bad:#e5484d; --warn:#d29922; --info:#4493f8; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+  h1 { font-size:22px; margin:0; } h2 { font-size:15px; margin:0 0 12px; }
+  .mut { color:var(--mut); font-size:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+  .grid .card { margin:0; } .big { font-size:28px; font-weight:700; }
+  .two { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+  .bar { display:grid; grid-template-columns:110px 1fr 40px; align-items:center; gap:8px; margin:6px 0; }
+  .bar i { display:block; height:10px; border-radius:5px; background:var(--info); min-width:2px; }
+  #trend { display:flex; gap:4px; flex-wrap:wrap; } #trend span { width:18px; height:28px; border-radius:4px; }
+  table { width:100%; border-collapse:collapse; } th,td { text-align:left; padding:8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:500; font-size:12px; } tbody tr { cursor:pointer; } tbody tr:hover { background:#222b35; }
+  .badge { padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#fff; }
+  .PASSED { background:var(--ok); } .REJECTED { background:var(--bad); }
+  .CRITICAL { background:var(--bad); } .HIGH { background:#d9622b; } .MEDIUM { background:var(--warn); } .LOW { background:#57606a; }
+  code, pre { font:12px/1.5 ui-monospace,Consolas,monospace; }
+  pre { background:#0b0f14; border:1px solid var(--line); border-radius:6px; padding:10px; overflow:auto; white-space:pre-wrap; margin:6px 0; }
+  .finding { border-top:1px solid var(--line); padding:12px 0; } .finding h3 { margin:0 0 4px; font-size:14px; }
+  a { color:var(--info); } .wrap { overflow-x:auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Security &amp; Quality Gate</h1>
+  <span class="mut" id="updated">Loading…</span>
+</header>
+
+<section class="grid" id="metrics"></section>
+<section class="two">
+  <div class="card"><h2>Issues by category</h2><div id="cats"></div></div>
+  <div class="card"><h2>Issues by severity</h2><div id="sevs"></div></div>
+</section>
+<section class="card"><h2>Pass / reject trend (latest 40, oldest first)</h2><div id="trend"></div></section>
+<section class="card" id="inspector" hidden></section>
+<section class="card">
+  <h2>Push &amp; commit activity</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>Gate</th><th>Commit</th><th>Contributor</th><th>Branch</th><th>Event</th><th>Issues</th><th>Time</th></tr></thead>
+    <tbody id="feed"></tbody>
+  </table></div>
+</section>
+
+<script>
+// All report content is untrusted (it includes contributors' code), so everything
+// is inserted with textContent via el() and never as HTML.
+const el = (tag, props = {}, ...kids) => {
+  const n = Object.assign(document.createElement(tag), props);
+  kids.forEach(k => n.append(k));
+  return n;
+};
+const $ = id => document.getElementById(id);
+const CATS = { secret: "Secrets", vulnerability: "Vulnerabilities", bug: "Bugs" };
+const SEVS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const get = url => fetch(url + "?t=" + Date.now()).then(r => r.ok ? r.json() : Promise.reject(r.status));
+
+function bars(target, rows) {
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  target.replaceChildren(...rows.map(([label, n]) => {
+    const i = el("i"); i.style.width = (n / max * 100) + "%";
+    return el("div", { className: "bar" }, el("span", { textContent: label }), el("div", {}, i), el("b", { textContent: n }));
+  }));
+}
+
+function render(index) {
+  const total = index.length, passed = index.filter(r => r.gate === "PASSED").length;
+  const sum = k => index.reduce((a, r) => a + ((r.counts || {})[k] || 0), 0);
+  const issues = index.reduce((a, r) => a + (r.total || 0), 0);
+  const metric = (label, value) => el("div", { className: "card" }, el("div", { className: "mut", textContent: label }), el("div", { className: "big", textContent: value }));
+  $("metrics").replaceChildren(
+    metric("Pushes evaluated", total), metric("Passed", passed), metric("Rejected", total - passed),
+    metric("Pass rate", total ? Math.round(passed / total * 100) + "%" : "–"), metric("Total issues", issues));
+  bars($("cats"), Object.entries(CATS).map(([k, label]) => [label, sum(k)]));
+  bars($("sevs"), SEVS.map(s => [s[0] + s.slice(1).toLowerCase(), sum(s)]));
+  $("trend").replaceChildren(...index.slice(0, 40).reverse().map(r =>
+    el("span", { className: r.gate, title: `${r.short_sha} ${r.gate} – ${r.actor}` })));
+  $("feed").replaceChildren(...index.map(r => {
+    const tr = el("tr", {},
+      el("td", {}, el("span", { className: "badge " + r.gate, textContent: r.gate })),
+      el("td", {}, el("code", { textContent: r.short_sha })),
+      el("td", { textContent: r.actor }), el("td", { textContent: r.branch }),
+      el("td", { textContent: r.pr ? `PR #${r.pr}` : r.event }),
+      el("td", { textContent: r.total }), el("td", { textContent: new Date(r.timestamp).toLocaleString() }));
+    tr.onclick = () => { location.hash = r.id; };
+    return tr;
+  }));
+  $("updated").textContent = "Updated " + new Date().toLocaleTimeString() + " · refreshes every 30s";
+}
+
+async function inspect() {
+  const id = decodeURIComponent(location.hash.slice(1)), box = $("inspector");
+  if (!/^[\w.-]+$/.test(id)) { box.hidden = true; return; }
+  let r;
+  try { r = await get(`data/reports/${id}.json`); } catch { box.hidden = true; return; }
+  const head = el("h2", {}, "Issue inspector – ", el("code", { textContent: r.short_sha }), " ",
+    el("span", { className: "badge " + r.gate, textContent: r.gate }));
+  const meta = el("p", { className: "mut", textContent:
+    `${r.actor} → ${r.branch} · ${r.pr ? "PR #" + r.pr : r.event} · ${new Date(r.timestamp).toLocaleString()} · ${r.files_scanned} file(s) · LLM: ${r.llm_status} ` });
+  if (/^https:\/\//.test(r.run_url || "")) meta.append(el("a", { href: r.run_url, target: "_blank", rel: "noopener", textContent: "CI run" }));
+  const reasons = el("ul", {}, ...(r.reasons || []).map(t => el("li", { textContent: t })));
+  const list = (r.findings || []).map(f => el("div", { className: "finding" },
+    el("h3", {}, el("span", { className: "badge " + f.severity, textContent: f.severity }), ` ${f.title}`),
+    el("div", { className: "mut", textContent: `${CATS[f.category] || f.category} · ${f.file}:${f.line} · detected by ${f.source}` }),
+    el("pre", { textContent: f.snippet || "(whole file)" }),
+    el("p", {}, el("b", { textContent: "Risk: " }), f.explanation || ""),
+    el("b", { textContent: "Recommended fix" }), el("pre", { textContent: f.fix || "" })));
+  box.replaceChildren(head, meta, reasons, ...(list.length ? list : [el("p", { textContent: "No issues found in this push." })]));
+  box.hidden = false;
+  box.scrollIntoView({ behavior: "smooth" });
+}
+
+async function load() {
+  try { render(await get("data/index.json")); }
+  catch { $("updated").textContent = "No scan reports yet – push a commit to generate the first one."; }
+}
+load(); inspect();
+setInterval(load, 30000);
+window.addEventListener("hashchange", inspect);
+</script>
+</body>
+</html>
