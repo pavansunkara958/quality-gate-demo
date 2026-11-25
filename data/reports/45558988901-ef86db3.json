@@ -1,0 +1,54 @@
+{
+  "id": "45558988901-ef86db3",
+  "sha": "ef86db310ba7ccc6d928f973961e4127775516c3",
+  "short_sha": "ef86db3",
+  "actor": "pavansunkara958",
+  "branch": "main",
+  "event": "pull_request",
+  "pr": "2",
+  "timestamp": "2026-11-25T06:13:21+00:00",
+  "gate": "REJECTED",
+  "reasons": [
+    "2 secret or credential leak(s) - zero tolerance"
+  ],
+  "counts": {
+    "secret": 2,
+    "vulnerability": 0,
+    "bug": 0,
+    "CRITICAL": 2,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 0
+  },
+  "total": 2,
+  "files_scanned": 1,
+  "llm_status": "error: SHADE_API_URL / SHADE_API_KEY are not set",
+  "run_url": "https://github.com/pavansunkara958/quality-gate-demo/actions/runs/45558988901",
+  "dashboard_url": "https://pavansunkara958.github.io/quality-gate-demo/",
+  "findings": [
+    {
+      "category": "secret",
+      "severity": "CRITICAL",
+      "file": "config.py",
+      "line": 1,
+      "title": "AWS access key ID",
+      "snippet": "AWS_ACCESS_KEY_ID = \"AKIA...[REDACTED]\"",
+      "explanation": "A credential committed to git is readable by everyone with repository access and stays in history even after it is deleted.",
+      "fix": "Remove the value, load it from an environment variable or secret manager, and rotate the exposed credential.",
+      "source": "rule",
+      "id": 1
+    },
+    {
+      "category": "secret",
+      "severity": "CRITICAL",
+      "file": "config.py",
+      "line": 2,
+      "title": "Hardcoded credential in db_password",
+      "snippet": "db_password = \"x9Kq...[REDACTED]\"",
+      "explanation": "A credential committed to git is readable by everyone with repository access and stays in history even after it is deleted.",
+      "fix": "Remove the value, load it from an environment variable or secret manager, and rotate the exposed credential.",
+      "source": "rule",
+      "id": 2
+    }
+  ]
+}
